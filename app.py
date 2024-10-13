@@ -1,6 +1,7 @@
 import torch
 from diffusers import StableDiffusionPipeline
-from IPython.display import display
+import streamlit as st
+from PIL import Image
 
 def generate_comic_image(user_prompt):
     # Append style modifiers to the user's prompt
@@ -21,9 +22,13 @@ def generate_comic_image(user_prompt):
     with torch.autocast(device):
         image = pipe(comic_style_prompt).images[0]
 
-    # Display the image in the notebook
-    display(image)
+    return image
 
-if __name__ == "__main__":
-    user_input = input("Enter a description for the image: ")
-    generate_comic_image(user_input)
+# Streamlit App
+st.title("Comic Style Image Generator")
+user_input = st.text_input("Enter a description for the image:", "A superhero flying through the sky")
+
+if st.button("Generate Image"):
+    with st.spinner("Generating image..."):
+        image = generate_comic_image(user_input)
+        st.image(image, caption="Generated Comic Image")
