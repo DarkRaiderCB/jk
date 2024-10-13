@@ -1,40 +1,29 @@
-import streamlit as st
-from diffusers import StableDiffusionPipeline
 import torch
+from diffusers import StableDiffusionPipeline
+from IPython.display import display
 
+def generate_comic_image(user_prompt):
+    # Append style modifiers to the user's prompt
+    comic_style_prompt = f"{user_prompt}, comic book style, comic illustration, bold lines, vibrant colors"
 
-@st.cache_resource
-def load_model():
-    model_id = "CompVis/stable-diffusion-v1-4"
-    # Use Accelerate's device_map to automatically handle device placement
+    # Load the Stable Diffusion model
+    model_id = "runwayml/stable-diffusion-v1-5"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Ensure you have access to the model. You might need to accept the terms on Hugging Face.
     pipe = StableDiffusionPipeline.from_pretrained(
-        model_id,
-        torch_dtype=torch.float16,
-        device_map="balanced"
+        model_id, 
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32
     )
-    return pipe
+    pipe = pipe.to(device)
 
+    # Generate the image
+    with torch.autocast(device):
+        image = pipe(comic_style_prompt).images[0]
 
-def generate_image(prompt):
-    pipe = load_model()
-    image = pipe(prompt).images[0]
-    return image
-
-
-def main():
-    st.title("Custom Jewelry Design Generator")
-    st.write("Describe your dream jewelry piece, and we'll generate an image of it!")
-
-    prompt = st.text_area("Enter your jewelry description here:", height=150)
-
-    if st.button("Generate Image"):
-        if prompt:
-            with st.spinner("Generating image..."):
-                image = generate_image(prompt)
-                st.image(image, caption="Generated Jewelry Design")
-        else:
-            st.warning("Please enter a description.")
-
+    # Display the image in the notebook
+    display(image)
 
 if __name__ == "__main__":
-    main()
+    user_input = input("Enter a description for the image: ")
+    generate_comic_image(user_input)
