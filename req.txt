@@ -2,11 +2,5 @@ streamlit
 pandas
 instaloader
 spacy
-transformers
 torch
-scikit-learn
-jax
-jaxlib
-numpy
-chex
-optax
+transformers
