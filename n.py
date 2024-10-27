@@ -5,14 +5,25 @@ import spacy
 import time
 from collections import Counter
 from transformers import pipeline
-import torch
 import os
 
 # Load the spaCy model
+
+
 @st.cache_resource
 def load_spacy_model():
     nlp = spacy.load('en_core_web_sm')
     return nlp
+
+# Load zero-shot classifier
+
+
+@st.cache_resource
+def load_classifier(model_name):
+    classifier = pipeline("zero-shot-classification",
+                          model=model_name, device=0)  # Use GPU
+    return classifier
+
 
 # Predefined themes for classification
 THEME_KEYWORDS = {
@@ -30,7 +41,7 @@ THEME_KEYWORDS = {
     'Business': ['business', 'entrepreneur', 'startup', 'marketing', 'finance', 'success', 'leadership', 'strategy', 'branding'],
     'Home': ['home', 'interior', 'decor', 'design', 'homedecor', 'DIY', 'organization', 'architecture', 'livingroom'],
     'Entertainment': ['entertainment', 'movies', 'tv', 'celebrity', 'series', 'show', 'hollywood', 'streaming', 'bingewatch'],
-    'Gaming': ['gaming', 'games', 'gamer', 'videogames', 'streaming', 'esports', 'gamingcommunity', 'gameplay', 'console'],
+    'Gaming': ['gaming', 'games', 'gamer', 'video games', 'streaming', 'esports', 'gamingcommunity', 'gameplay', 'console'],
     'Nature': ['nature', 'outdoors', 'wildlife', 'environment', 'sustainability', 'ecology', 'landscape', 'hiking', 'flora'],
     'Beauty': ['beauty', 'makeup', 'skincare', 'cosmetics', 'beautyblogger', 'hair', 'nails', 'glam', 'beautytips'],
     'Finance': ['finance', 'money', 'investing', 'stocks', 'wealth', 'budgeting', 'saving', 'financialplanning', 'cryptocurrency'],
@@ -49,32 +60,36 @@ THEME_KEYWORDS = {
     # Add more themes and keywords as needed
 }
 
+
 def classify_content_theme_combined(text, use_bert=False, model_name=None):
     nlp = load_spacy_model()
     doc = nlp(text)
     tokenized_text = [
         token.text for token in doc if not token.is_stop and token.is_alpha]
 
+    # Create a frequency counter for themes based on keywords in tokenized text
     theme_counter = Counter()
+
     for theme, keywords in THEME_KEYWORDS.items():
         for keyword in keywords:
             theme_counter[theme] += text.lower().count(keyword.lower())
+
+    # Determine the most common theme using keyword matching first
     most_common_theme = theme_counter.most_common(1)
 
+    # Optionally, use zero-shot classification
     if use_bert and model_name is not None:
-        classifier = pipeline('zero-shot-classification', model=model_name)
+        classifier = load_classifier(model_name)
         labels = list(THEME_KEYWORDS.keys())
-        result = classifier(text, candidate_labels=labels, multi_label=False)
-        # Get top two themes
-        most_common_theme = list(zip(result['labels'], result['scores']))[:2]
+        classification = classifier(text, labels, multi_label=True)
+        bert_classified_themes = classification['labels']
+        most_common_theme = bert_classified_themes[:2]  # Return top 2 themes
 
     if most_common_theme:
-        if not use_bert:
-            return most_common_theme[0][0]
-        else:
-            return ', '.join([t[0] for t in most_common_theme])
+        return most_common_theme[0][0] if not use_bert else ', '.join(most_common_theme)
     else:
         return "Unknown"
+
 
 def get_influencer_content_theme(username, L, use_bert=False, model_name=None):
     # Load Instagram profile
@@ -106,6 +121,7 @@ def get_influencer_content_theme(username, L, use_bert=False, model_name=None):
     # Classify and return content theme using the combined data
     return classify_content_theme_combined(combined_text, use_bert, model_name)
 
+
 def calculate_engagement_rate(profile, L):
     time.sleep(10)  # To avoid Instagram's rate limiting
 
@@ -120,13 +136,14 @@ def calculate_engagement_rate(profile, L):
         post_count += 1
 
     # Engagement calculation
-    if post_count > 0 and profile.followers > 0:
+    if post_count > 0:
         engagement_rate = (engagement_sum / post_count) / \
             profile.followers * 100
     else:
         engagement_rate = 0
 
     return engagement_rate
+
 
 def login_instagram(L):
     session_file = "instaloader_session"
@@ -159,6 +176,7 @@ def login_instagram(L):
                 st.error(f"Login failed: {str(e)}")
                 st.session_state['logged_in'] = False
 
+
 def main():
     st.title('Instagram Metrics and Content Theme Analyzer')
 
@@ -171,7 +189,7 @@ def main():
     login_instagram(L)
 
     if st.session_state['logged_in']:
-        st.header("Enter the Instagram Username to Analyze")
+        st.header("Enter your Instagram Username")
         target_username = st.text_input("Instagram Username to Analyze")
 
         if st.button("Analyze"):
@@ -184,19 +202,14 @@ def main():
                 engagement_rate = calculate_engagement_rate(profile, L)
                 follower_count = profile.followers
                 following_count = profile.followees
-                if following_count == 0:
-                    following_count = 1  # Avoid division by zero
-                if engagement_rate > 0.2 or follower_count / following_count >= 0.5:
-                    real_or_fake = "Real"
-                else:
-                    real_or_fake = "Fake"
+                real_or_fake = "Real" if engagement_rate > 0.2 or follower_count / \
+                    following_count >= 0.5 else "Fake"
 
                 # Get content themes
                 content_theme_method1 = get_influencer_content_theme(
                     target_username, L, use_bert=False)
                 content_theme_method2 = get_influencer_content_theme(
-                    target_username, L, use_bert=True, model_name="valhalla/distilbart-mnli-12-1")
-
+                    target_username, L, use_bert=True, model_name="facebook/bart-large-mnli")
 
                 # Display the results
                 st.write(f"**Username:** {target_username}")
@@ -210,10 +223,11 @@ def main():
                 st.write(
                     f"**Method 1 (Keyword Matching):** {content_theme_method1}")
                 st.write(
-                    f"**Method 2 (Zero-shot):** {content_theme_method2}")
+                    f"**Method 2 (Zero-shot with BART):** {content_theme_method2}")
 
             except Exception as e:
                 st.error(f"Failed to process {target_username}: {str(e)}")
+
 
 if __name__ == "__main__":
     main()
