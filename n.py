@@ -195,9 +195,8 @@ def main():
                 content_theme_method1 = get_influencer_content_theme(
                     target_username, L, use_bert=False)
                 content_theme_method2 = get_influencer_content_theme(
-                    target_username, L, use_bert=True, model_name="joeddav/distilbert-base-uncased-mnli")  # Using lightweight model
-                content_theme_method2 = get_influencer_content_theme(
-                    target_username, L, use_bert=True, model_name="typeform/mobilebert-uncased-mnli")
+                    target_username, L, use_bert=True, model_name="valhalla/distilbart-mnli-12-1")
+
 
                 # Display the results
                 st.write(f"**Username:** {target_username}")
@@ -211,7 +210,7 @@ def main():
                 st.write(
                     f"**Method 1 (Keyword Matching):** {content_theme_method1}")
                 st.write(
-                    f"**Method 2 (Zero-shot with DistilBERT):** {content_theme_method2}")
+                    f"**Method 2 (Zero-shot):** {content_theme_method2}")
 
             except Exception as e:
                 st.error(f"Failed to process {target_username}: {str(e)}")
