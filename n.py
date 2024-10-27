@@ -102,57 +102,63 @@ def classify_content_theme_combined(text, use_bert=False, model_name=None):
 
 
 def get_influencer_content_theme(username, L, use_bert=False, model_name=None):
-    # Load Instagram profile
-    profile = instaloader.Profile.from_username(L.context, username)
-
-    # Get bio (biography) from the profile
-    bio_text = profile.biography
-
-    # Get username and full name
-    username_text = profile.username
-    full_name_text = profile.full_name if profile.full_name else ""
-
-    # Get external URL (if available)
-    external_url = profile.external_url if profile.external_url else ""
-
-    # Get recent 6 posts
-    posts = profile.get_posts()
-    post_captions = []
-    for i, post in enumerate(posts):
-        if i >= 6:  # Limit to 6 posts
-            break
-        caption = post.caption if post.caption else ""
-        post_captions.append(caption)
-
-    # Combine all available text sources
-    combined_text = f"{bio_text} {username_text} {full_name_text} {external_url} " + \
-        " ".join(post_captions)
-
-    # Classify and return content theme using the combined data
-    return classify_content_theme_combined(combined_text, use_bert, model_name)
+    try:
+        # Load Instagram profile
+        profile = instaloader.Profile.from_username(L.context, username)
+        
+        # Get bio, username, and full name, with default values if missing
+        bio_text = profile.biography or ""
+        username_text = profile.username
+        full_name_text = profile.full_name if profile.full_name else ""
+        
+        # Get external URL if available
+        external_url = profile.external_url if profile.external_url else ""
+        
+        # Retrieve recent posts (limit to 6 posts)
+        posts = profile.get_posts()
+        post_captions = []
+        for i, post in enumerate(posts):
+            if i >= 6:
+                break
+            caption = post.caption if post.caption else ""
+            post_captions.append(caption)
+        
+        # Combine all available text sources for classification
+        combined_text = f"{bio_text} {username_text} {full_name_text} {external_url} " + " ".join(post_captions)
+        
+        # Classify and return the theme using the combined data
+        return classify_content_theme_combined(combined_text, use_bert, model_name)
+    
+    except Exception as e:
+        # Handle and return an error message if fetching data fails
+        return f"Error processing {username}: {str(e)}"
 
 
 def calculate_engagement_rate(profile, L):
-    time.sleep(10)  # To avoid Instagram's rate limiting
+    try:
+        time.sleep(10)  # To avoid Instagram's rate limiting
 
-    # Simulate calculating engagement rate (mockup)
-    posts = profile.get_posts()
-    engagement_sum = 0
-    post_count = 0
-    for post in posts:
-        if post_count >= 5:
-            break
-        engagement_sum += post.likes
-        post_count += 1
-
-    # Engagement calculation
-    if post_count > 0:
-        engagement_rate = (engagement_sum / post_count) / \
-            profile.followers * 100
-    else:
-        engagement_rate = 0
-
-    return engagement_rate
+        # Retrieve recent posts (limit to 5 posts)
+        posts = profile.get_posts()
+        engagement_sum = 0
+        post_count = 0
+        for i, post in enumerate(posts):
+            if i >= 5:
+                break
+            engagement_sum += post.likes
+            post_count += 1
+        
+        # Calculate engagement rate if there are posts
+        if post_count > 0:
+            engagement_rate = (engagement_sum / post_count) / profile.followers * 100
+        else:
+            engagement_rate = 0
+        
+        return engagement_rate
+    
+    except Exception as e:
+        # Handle and return an error message if fetching engagement rate fails
+        return f"Error calculating engagement rate: {str(e)}"
 
 
 def login_instagram(L):
