@@ -4,26 +4,15 @@ import instaloader
 import spacy
 import time
 from collections import Counter
-from transformers import AutoTokenizer, AutoModel
-from sklearn.metrics.pairwise import cosine_similarity
+from transformers import pipeline
 import torch
 import os
 
 # Load the spaCy model
-
-
 @st.cache_resource
 def load_spacy_model():
     nlp = spacy.load('en_core_web_sm')
     return nlp
-
-
-@st.cache_resource
-def load_lightweight_model(model_name):
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
-    return tokenizer, model
-
 
 # Predefined themes for classification
 THEME_KEYWORDS = {
@@ -41,7 +30,7 @@ THEME_KEYWORDS = {
     'Business': ['business', 'entrepreneur', 'startup', 'marketing', 'finance', 'success', 'leadership', 'strategy', 'branding'],
     'Home': ['home', 'interior', 'decor', 'design', 'homedecor', 'DIY', 'organization', 'architecture', 'livingroom'],
     'Entertainment': ['entertainment', 'movies', 'tv', 'celebrity', 'series', 'show', 'hollywood', 'streaming', 'bingewatch'],
-    'Gaming': ['gaming', 'games', 'gamer', 'video games', 'streaming', 'esports', 'gamingcommunity', 'gameplay', 'console'],
+    'Gaming': ['gaming', 'games', 'gamer', 'videogames', 'streaming', 'esports', 'gamingcommunity', 'gameplay', 'console'],
     'Nature': ['nature', 'outdoors', 'wildlife', 'environment', 'sustainability', 'ecology', 'landscape', 'hiking', 'flora'],
     'Beauty': ['beauty', 'makeup', 'skincare', 'cosmetics', 'beautyblogger', 'hair', 'nails', 'glam', 'beautytips'],
     'Finance': ['finance', 'money', 'investing', 'stocks', 'wealth', 'budgeting', 'saving', 'financialplanning', 'cryptocurrency'],
@@ -60,7 +49,6 @@ THEME_KEYWORDS = {
     # Add more themes and keywords as needed
 }
 
-
 def classify_content_theme_combined(text, use_bert=False, model_name=None):
     nlp = load_spacy_model()
     doc = nlp(text)
@@ -74,92 +62,71 @@ def classify_content_theme_combined(text, use_bert=False, model_name=None):
     most_common_theme = theme_counter.most_common(1)
 
     if use_bert and model_name is not None:
-        tokenizer, model = load_lightweight_model(model_name)
+        classifier = pipeline('zero-shot-classification', model=model_name)
         labels = list(THEME_KEYWORDS.keys())
-
-        # Generate embeddings for the text
-        text_emb = model(**tokenizer(text, return_tensors="pt"))[0].mean(dim=1)
-
-        # Generate embeddings for each theme
-        theme_embs = []
-        for theme in labels:
-            theme_text = " ".join(THEME_KEYWORDS[theme])
-            theme_emb = model(
-                **tokenizer(theme_text, return_tensors="pt"))[0].mean(dim=1)
-            theme_embs.append(theme_emb)
-
-        # Calculate cosine similarity for each theme
-        similarities = [cosine_similarity(text_emb.detach().numpy(
-        ), theme_emb.detach().numpy())[0][0] for theme_emb in theme_embs]
-        most_similar_themes = sorted(
-            zip(labels, similarities), key=lambda x: x[1], reverse=True)[:2]
-        most_common_theme = most_similar_themes
+        result = classifier(text, candidate_labels=labels, multi_label=False)
+        # Get top two themes
+        most_common_theme = list(zip(result['labels'], result['scores']))[:2]
 
     if most_common_theme:
-        return most_common_theme[0][0] if not use_bert else ', '.join([t[0] for t in most_common_theme])
+        if not use_bert:
+            return most_common_theme[0][0]
+        else:
+            return ', '.join([t[0] for t in most_common_theme])
     else:
         return "Unknown"
 
-
 def get_influencer_content_theme(username, L, use_bert=False, model_name=None):
-    try:
-        # Load Instagram profile
-        profile = instaloader.Profile.from_username(L.context, username)
-        
-        # Get bio, username, and full name, with default values if missing
-        bio_text = profile.biography or ""
-        username_text = profile.username
-        full_name_text = profile.full_name if profile.full_name else ""
-        
-        # Get external URL if available
-        external_url = profile.external_url if profile.external_url else ""
-        
-        # Retrieve recent posts (limit to 6 posts)
-        posts = profile.get_posts()
-        post_captions = []
-        for i, post in enumerate(posts):
-            if i >= 6:
-                break
-            caption = post.caption if post.caption else ""
-            post_captions.append(caption)
-        
-        # Combine all available text sources for classification
-        combined_text = f"{bio_text} {username_text} {full_name_text} {external_url} " + " ".join(post_captions)
-        
-        # Classify and return the theme using the combined data
-        return classify_content_theme_combined(combined_text, use_bert, model_name)
-    
-    except Exception as e:
-        # Handle and return an error message if fetching data fails
-        return f"Error processing {username}: {str(e)}"
+    # Load Instagram profile
+    profile = instaloader.Profile.from_username(L.context, username)
 
+    # Get bio (biography) from the profile
+    bio_text = profile.biography
+
+    # Get username and full name
+    username_text = profile.username
+    full_name_text = profile.full_name if profile.full_name else ""
+
+    # Get external URL (if available)
+    external_url = profile.external_url if profile.external_url else ""
+
+    # Get recent 6 posts
+    posts = profile.get_posts()
+    post_captions = []
+    for i, post in enumerate(posts):
+        if i >= 6:  # Limit to 6 posts
+            break
+        caption = post.caption if post.caption else ""
+        post_captions.append(caption)
+
+    # Combine all available text sources
+    combined_text = f"{bio_text} {username_text} {full_name_text} {external_url} " + \
+        " ".join(post_captions)
+
+    # Classify and return content theme using the combined data
+    return classify_content_theme_combined(combined_text, use_bert, model_name)
 
 def calculate_engagement_rate(profile, L):
-    try:
-        time.sleep(10)  # To avoid Instagram's rate limiting
+    time.sleep(10)  # To avoid Instagram's rate limiting
 
-        # Retrieve recent posts (limit to 5 posts)
-        posts = profile.get_posts()
-        engagement_sum = 0
-        post_count = 0
-        for i, post in enumerate(posts):
-            if i >= 5:
-                break
-            engagement_sum += post.likes
-            post_count += 1
-        
-        # Calculate engagement rate if there are posts
-        if post_count > 0:
-            engagement_rate = (engagement_sum / post_count) / profile.followers * 100
-        else:
-            engagement_rate = 0
-        
-        return engagement_rate
-    
-    except Exception as e:
-        # Handle and return an error message if fetching engagement rate fails
-        return f"Error calculating engagement rate: {str(e)}"
+    # Simulate calculating engagement rate (mockup)
+    posts = profile.get_posts()
+    engagement_sum = 0
+    post_count = 0
+    for post in posts:
+        if post_count >= 5:
+            break
+        engagement_sum += post.likes
+        post_count += 1
 
+    # Engagement calculation
+    if post_count > 0 and profile.followers > 0:
+        engagement_rate = (engagement_sum / post_count) / \
+            profile.followers * 100
+    else:
+        engagement_rate = 0
+
+    return engagement_rate
 
 def login_instagram(L):
     session_file = "instaloader_session"
@@ -192,7 +159,6 @@ def login_instagram(L):
                 st.error(f"Login failed: {str(e)}")
                 st.session_state['logged_in'] = False
 
-
 def main():
     st.title('Instagram Metrics and Content Theme Analyzer')
 
@@ -205,7 +171,7 @@ def main():
     login_instagram(L)
 
     if st.session_state['logged_in']:
-        st.header("Enter your Instagram Username")
+        st.header("Enter the Instagram Username to Analyze")
         target_username = st.text_input("Instagram Username to Analyze")
 
         if st.button("Analyze"):
@@ -218,14 +184,20 @@ def main():
                 engagement_rate = calculate_engagement_rate(profile, L)
                 follower_count = profile.followers
                 following_count = profile.followees
-                real_or_fake = "Real" if engagement_rate > 0.2 or follower_count / \
-                    following_count >= 0.5 else "Fake"
+                if following_count == 0:
+                    following_count = 1  # Avoid division by zero
+                if engagement_rate > 0.2 or follower_count / following_count >= 0.5:
+                    real_or_fake = "Real"
+                else:
+                    real_or_fake = "Fake"
 
                 # Get content themes
                 content_theme_method1 = get_influencer_content_theme(
                     target_username, L, use_bert=False)
                 content_theme_method2 = get_influencer_content_theme(
-                    target_username, L, use_bert=True, model_name="facebook/bart-large-mnli")
+                    target_username, L, use_bert=True, model_name="joeddav/distilbert-base-uncased-mnli")  # Using lightweight model
+                content_theme_method2 = get_influencer_content_theme(
+                    target_username, L, use_bert=True, model_name="typeform/mobilebert-uncased-mnli")
 
                 # Display the results
                 st.write(f"**Username:** {target_username}")
@@ -239,11 +211,10 @@ def main():
                 st.write(
                     f"**Method 1 (Keyword Matching):** {content_theme_method1}")
                 st.write(
-                    f"**Method 2 (Zero-shot with BART):** {content_theme_method2}")
+                    f"**Method 2 (Zero-shot with DistilBERT):** {content_theme_method2}")
 
             except Exception as e:
                 st.error(f"Failed to process {target_username}: {str(e)}")
-
 
 if __name__ == "__main__":
     main()
