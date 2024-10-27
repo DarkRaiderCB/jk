@@ -1,10 +1,12 @@
-streamlit==1.24.0
-pandas==1.5.3
-instaloader==4.9.5
-spacy==3.5.0
-transformers==4.21.0
-torch==1.12.1      # Required by transformers
-scikit-learn==1.2.2 # For cosine similarity
-jax==0.3.8
-jaxlib==0.3.8
-numpy==1.23.5
+streamlit
+pandas
+instaloader
+spacy
+transformers
+torch
+scikit-learn
+jax
+jaxlib
+numpy
+chex
+optax
